@@ -440,3 +440,76 @@ class Game(tk.Frame):
 
     def draw_text(self, x, y, text, size='20'):
         return self.canvas.create_text(x, y, text=text, font=('Comic Sans MS', size, 'bold'), fill='#725178', justify='center')
+
+    def update_hud_text(self):
+        text = f'Nyawa: {self.lives}      Skor: {self.score}      Level: {self.level}'
+        if self.hud is None:
+            self.hud = self.canvas.create_text(20, 20, text=text, anchor='w', font=('Comic Sans MS', 13, 'bold'), fill='#725178')
+        else:
+            self.canvas.itemconfig(self.hud, text=text)
+        self.canvas.tag_raise(self.hud)
+
+    def screen_shake(self, count=10):
+        if count > 0 and not self.is_paused:
+            dx, dy = random.randint(-4, 4), random.randint(-4, 4)
+            sign = 1 if count % 2 == 0 else -1
+            self.canvas.move("all", dx * sign, dy * sign)
+            self.after(30, lambda: self.screen_shake(count - 1))
+
+    def trigger_explosion(self, x, y):
+        play_sfx('explosion')
+        self.screen_shake() 
+        items = self.canvas.find_overlapping(x-55, y-55, x+55, y+55)
+        for item in items:
+            if item in self.items and isinstance(self.items[item], Brick):
+                obj = self.items[item]
+                is_tnt = obj.is_tnt
+                destroyed, b_coords, color, _ = obj.hit()
+                if destroyed:
+                    score_gained = 10 * self.combo
+                    self.score += score_gained
+                    self.spawn_particles(b_coords, color, count=10)
+                    self.float_texts.append(FloatingText(self.canvas, (b_coords[0]+b_coords[2])/2, b_coords[1]-10, f"+{score_gained}"))
+                    del self.items[item]
+                    if random.random() < 0.3: self.spawn_powerup(b_coords)
+                    if is_tnt: 
+                        cx = (b_coords[0] + b_coords[2]) / 2
+                        cy = (b_coords[1] + b_coords[3]) / 2
+                        self.after(100, lambda: self.trigger_explosion(cx, cy))
+        self.update_hud_text()
+
+    def spawn_powerup(self, coords):
+        x, y = (coords[0] + coords[2]) / 2, (coords[1] + coords[3]) / 2
+        ptype = random.choices(['M', 'R', 'F', 'T', 'S'], weights=[20, 20, 20, 20, 20])[0]
+        self.powerups.append(PowerUp(self.canvas, x, y, ptype))
+        
+    def spawn_particles(self, coords, color, count=5):
+        x, y = (coords[0] + coords[2]) / 2, (coords[1] + coords[3]) / 2
+        for _ in range(count):
+            self.particles.append(Particle(self.canvas, x, y, color))
+
+    def activate_powerup(self, ptype):
+        if ptype == 'T': 
+            play_sfx('bad')
+            self.shrink_timer = 300 
+            self.paddle.shrink(True)
+        else:
+            play_sfx('powerup')
+            if ptype == 'S':
+                if not self.shield_item:
+                    self.shield_item = self.canvas.create_rectangle(0, self.height-12, self.width, self.height, fill='#76D7C4', outline='white', tags='shield')
+            elif ptype == 'M' and self.balls:
+                b = self.balls[0]
+                coords = b.get_position()
+                x, y = (coords[0] + coords[2]) / 2, (coords[1] + coords[3]) / 2
+                for d in [[1, -1], [-1, -1]]:
+                    nb = Ball(self.canvas, x, y)
+                    nb.speed = b.speed
+                    nb.direction = d
+                    if b.piercing: nb.set_fireball(True)
+                    self.balls.append(nb)
+            elif ptype == 'R':
+                self.rocket_timer = 300
+            elif ptype == 'F':
+                self.fireball_timer = 300
+                for b in self.balls: b.set_fireball(True)
