@@ -352,3 +352,91 @@ class Game(tk.Frame):
         self.shrink_timer = 0
         self.shield_item = None
         
+        self.is_playing = False
+        self.is_paused = False
+        self.pause_text = None
+        
+        self.paddle = Paddle(self.canvas, self.width/2, 380)
+        self.items[self.paddle.item] = self.paddle
+        
+        self.hud = None
+        self.pressed_keys = {'Left': False, 'Right': False}
+        
+        for _ in range(8):
+            self.clouds.append(Cloud(self.canvas, random.randint(-100, 600), random.randint(20, 350)))
+        
+        self.build_bricks()
+        self.setup_game()
+        self.canvas.focus_set()
+        
+        self.canvas.bind('<KeyPress-Left>', lambda _: self.pressed_keys.update({'Left': True}))
+        self.canvas.bind('<KeyRelease-Left>', lambda _: self.pressed_keys.update({'Left': False}))
+        self.canvas.bind('<KeyPress-Right>', lambda _: self.pressed_keys.update({'Right': True}))
+        self.canvas.bind('<KeyRelease-Right>', lambda _: self.pressed_keys.update({'Right': False}))
+        
+        self.canvas.bind('<p>', lambda _: self.toggle_pause())
+        self.canvas.bind('<Escape>', lambda _: self.toggle_pause())
+
+        play_sfx('intro')
+
+    def update_background_theme(self):
+        # Mengubah warna latar belakang (langit) berdasarkan level permainan
+        if self.level == 1:
+            bg_color = '#FFF0F5' # Pagi / Pink Pastel (Lavender Blush)
+        elif self.level == 2:
+            bg_color = '#FDEBD0' # Sore / Oranye Hangat (Peach)
+        else:
+            bg_color = '#E8F8F5' # Malam / Biru Kehijauan Tenang (Mint Pastel)
+        self.canvas.config(bg=bg_color)
+
+    def toggle_pause(self):
+        if not self.is_playing: return
+        self.is_paused = not self.is_paused
+        if self.is_paused:
+            self.pause_text = self.draw_text(self.width/2, self.height/2 + 20, 'Permainan Dijeda\nTekan P atau ESC untuk melanjutkan', size='20')
+        else:
+            if self.pause_text:
+                self.canvas.delete(self.pause_text)
+                self.pause_text = None
+
+    def build_bricks(self):
+        for x in range(5, self.width - 5, 75):
+            for y, hits in [(80, 3), (110, 2), (140, 1)]:
+                if random.random() < 0.10: hits = -1 
+                is_moving = True if (y <= 110 and self.level > 1) else False
+                self.add_brick(x + 37.5, y, hits, is_moving)
+
+    def clear_entities(self):
+        for lst in [self.balls, self.powerups, self.rockets, self.particles, self.trails, self.float_texts]:
+            for item in lst: item.delete()
+            lst.clear()
+        if self.shield_item:
+            self.canvas.delete(self.shield_item)
+            self.shield_item = None
+        self.rocket_timer = self.fireball_timer = self.shrink_timer = 0
+        self.combo = 1
+        self.paddle.shrink(False)
+        self.is_playing = False
+
+    def setup_game(self):
+           self.update_background_theme() # Update tema warna langit tiap setup level
+           self.add_ball()
+           self.update_hud_text()
+           self.text = self.draw_text(305, 230, 'Tekan Spasi untuk Mulai\nSelamat bermain!', size='18')
+           self.canvas.bind('<space>', lambda _: self.start_game())
+
+    def add_ball(self):
+        self.clear_entities()
+        paddle_coords = self.paddle.get_position()
+        x = (paddle_coords[0] + paddle_coords[2]) * 0.5
+        ball = Ball(self.canvas, x, 355)
+        ball.speed = 5 + (self.level - 1) 
+        self.balls.append(ball)
+        self.paddle.set_ball(ball)
+
+    def add_brick(self, x, y, hits, is_moving=False):
+        brick = Brick(self.canvas, x, y, hits, is_moving)
+        self.items[brick.item] = brick
+
+    def draw_text(self, x, y, text, size='20'):
+        return self.canvas.create_text(x, y, text=text, font=('Comic Sans MS', size, 'bold'), fill='#725178', justify='center')
