@@ -600,3 +600,119 @@ class Game(tk.Frame):
                     self.update_hud_text()
                     pu.delete()
                     self.powerups.remove(pu)
+
+        num_bricks = len(self.canvas.find_withtag('brick'))
+        if num_bricks == 0: 
+            play_sfx('levelup')
+            self.level += 1 
+            self.is_playing = False
+            self.text = self.draw_text(305, 220, f'Selamat! Level {self.level - 1} Selesai.\nBersiap untuk tantangan selanjutnya!', size='18')
+            self.after(3000, self.next_level)
+            return
+        elif len(self.balls) == 0: 
+            play_sfx('lose')
+            self.is_playing = False
+            self.screen_shake(15) 
+            self.lives -= 1
+            self.update_hud_text()
+            if self.lives < 0:
+                self.text = self.draw_text(305, 220, 'Permainan Berakhir!\nTetap semangat dan coba lagi ya.', size='20')
+            else:
+                self.text = self.draw_text(305, 220, 'Bola terjatuh!\nAyo fokus, Anda pasti bisa.', size='18')
+                self.after(2000, self.reset_after_life_lost)
+            return
+
+        self.after(16, self.game_loop)
+
+    def handle_ball_collisions(self, ball):
+        c = ball.get_position()
+        items = self.canvas.find_overlapping(*c)
+        objs = [self.items[x] for x in items if x in self.items]
+        
+        if not objs: return
+        
+        x_center = (c[0] + c[2]) * 0.5
+        hit_paddle = False
+        hit_brick = False
+        
+        for o in objs:
+            if isinstance(o, Paddle): hit_paddle = True
+            if isinstance(o, Brick): hit_brick = True
+
+        if len(objs) > 1:
+            if not (ball.piercing and hit_brick): ball.direction[1] *= -1
+        elif len(objs) == 1:
+            oc = objs[0].get_position()
+            if hit_paddle:
+                self.combo = 1 
+                self.paddle.set_expression('shocked') 
+                if x_center > oc[2]: ball.direction[0] = 1
+                elif x_center < oc[0]: ball.direction[0] = -1
+                else: ball.direction[1] *= -1
+                play_sfx('bounce')
+            elif hit_brick:
+                if not ball.piercing:
+                    if x_center > oc[2]: ball.direction[0] = 1
+                    elif x_center < oc[0]: ball.direction[0] = -1
+                    else: ball.direction[1] *= -1
+
+        for o in objs:
+            if isinstance(o, Brick):
+                destroyed, bc, color, is_tnt = o.hit()
+                if destroyed:
+                    del self.items[o.item]
+                    score_gained = 10 * self.combo
+                    self.score += score_gained
+                    self.update_hud_text()
+                    
+                    if is_tnt:
+                        self.trigger_explosion((bc[0]+bc[2])/2, (bc[1]+bc[3])/2)
+                    else:
+                        self.spawn_particles(bc, color)
+                        if self.combo > 1:
+                            self.float_texts.append(FloatingText(self.canvas, (bc[0]+bc[2])/2, bc[1]-10, f"Combo x{self.combo}! (+{score_gained})"))
+                        if random.random() < 0.2: self.spawn_powerup(bc)
+                        
+                    self.combo += 1 
+                else:
+                    self.score += (1 * self.combo)
+                    self.update_hud_text()
+
+    def handle_rocket_collisions(self, rocket):
+        c = rocket.get_position()
+        items = self.canvas.find_overlapping(*c)
+        hit_anything = False
+        for item in items:
+            if item in self.items and isinstance(self.items[item], Brick):
+                hit_anything = True
+                obj = self.items[item]
+                destroyed, bc, color, is_tnt = obj.hit()
+                if destroyed:
+                    self.score += 5
+                    self.update_hud_text()
+                    del self.items[item]
+                    if is_tnt:
+                        self.trigger_explosion((bc[0]+bc[2])/2, (bc[1]+bc[3])/2)
+                    else:
+                        self.spawn_particles(bc, color)
+                        if random.random() < 0.2: self.spawn_powerup(bc)
+        if hit_anything:
+            rocket.delete()
+            if rocket in self.rockets: self.rockets.remove(rocket)
+
+    def next_level(self):
+        self.canvas.delete(self.text)
+        self.build_bricks()
+        self.setup_game()
+        
+    def reset_after_life_lost(self):
+        self.canvas.delete(self.text)
+        self.setup_game()
+
+if __name__ == '__main__':
+    root = tk.Tk()
+    root.title('Pastel Brick Breaker - Edisi Final Sempurna')
+    root.resizable(False, False) 
+    game = Game(root)
+    game.mainloop()
+    
