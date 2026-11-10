@@ -513,3 +513,90 @@ class Game(tk.Frame):
             elif ptype == 'F':
                 self.fireball_timer = 300
                 for b in self.balls: b.set_fireball(True)
+
+    def start_game(self):
+        self.canvas.unbind('<space>')
+        self.canvas.delete(self.text)
+        self.paddle.ball = None
+        self.is_playing = True
+        self.game_loop()
+
+    def game_loop(self):
+        if self.is_paused:
+            self.after(16, self.game_loop)
+            return
+
+        self.paddle.update_animation()
+
+        if self.pressed_keys['Left']: self.paddle.move(-10)
+        if self.pressed_keys['Right']: self.paddle.move(10)
+        
+        for cloud in self.clouds: cloud.update()
+            
+        for item in self.items.values():
+            if isinstance(item, Brick): item.update_movement()
+
+        if self.rocket_timer > 0:
+            self.rocket_timer -= 1
+            if self.rocket_timer % 15 == 0:
+                play_sfx('shoot')
+                pc = self.paddle.get_position()
+                self.rockets.extend([Rocket(self.canvas, pc[0]+15, pc[1]), Rocket(self.canvas, pc[2]-15, pc[1])])
+        
+        if self.fireball_timer > 0:
+            self.fireball_timer -= 1
+            if self.fireball_timer == 0:
+                for b in self.balls: b.set_fireball(False)
+                
+        if self.shrink_timer > 0:
+            self.shrink_timer -= 1
+            if self.shrink_timer == 0:
+                self.paddle.shrink(False)
+
+        for ball in self.balls[:]:
+            ball_coords = ball.get_position()
+            if ball_coords[3] >= self.height - 12 and self.shield_item:
+                ball.direction[1] = -1
+                ball.move(0, -15)
+                self.canvas.delete(self.shield_item)
+                self.shield_item = None
+                play_sfx('bounce')
+            elif ball_coords[3] >= self.height:
+                ball.delete()
+                self.balls.remove(ball)
+            else:
+                self.handle_ball_collisions(ball)
+                ball.update()
+                color = '#F39C12' if ball.piercing else '#82C8EA'
+                self.trails.append(Trail(self.canvas, (ball_coords[0]+ball_coords[2])/2, (ball_coords[1]+ball_coords[3])/2, color))
+
+        for p in self.particles[:]:
+            if not p.update(): self.particles.remove(p)
+        for t in self.trails[:]:
+            if not t.update(): self.trails.remove(t)
+        for ft in self.float_texts[:]:
+            if not ft.update(): self.float_texts.remove(ft)
+            
+        for r in self.rockets[:]:
+            r.update()
+            if r.get_position()[1] <= 0:
+                r.delete()
+                self.rockets.remove(r)
+            else:
+                self.handle_rocket_collisions(r)
+                
+        for pu in self.powerups[:]:
+            pu.update()
+            c = pu.get_position()
+            if c[3] >= self.height:
+                pu.delete()
+                self.powerups.remove(pu)
+            else:
+                items = self.canvas.find_overlapping(*c)
+                if self.paddle.item in items or self.paddle.mid in items:
+                    self.paddle.set_expression('shocked') 
+                    self.activate_powerup(pu.ptype)
+                    self.score += 25 
+                    self.update_hud_text()
+                    pu.delete()
+                    self.powerups.remove(pu)
